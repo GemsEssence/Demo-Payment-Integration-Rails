@@ -10,10 +10,13 @@
     <p class="alert"><%= alert %></p>
 
     <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <%= javascript_include_tag 'popup', 'data-turbo-track': 'reload' %>
     <%= javascript_importmap_tags %>
   </head>
 
   <body>
+    <div id="popup" class="popup hidden" data-popup-message="<%= flash[:popup_message] %>"></div>
+
     <%= yield %>
   </body>
 </html>

@@ -71,7 +71,7 @@ group :test do
 
 end
 
-gem "byebug"
+gem "pry"
 gem "devise"
 gem "annotate", "~> 3.2"
 gem "haml"
