@@ -1,5 +1,4 @@
 %script(src="https://www.paypal.com/sdk/js?client-id=#{ENV['PAYPAL_CLIENT_ID']}")
-%binding.pry
 =  stripe_javascript_tag
 
 %div
@@ -117,28 +116,36 @@
   }
 
   paypal.Buttons({
-      env: "#{ENV['PAYPAL_ENV']}",
-      createOrder: function() {
-        $('#order-type').val("paypal");
-        if (isPayment()) {
-          return $.post("#{paypal_create_payment_url}", $('#order-details').serialize()).then(function(data) {
-            return data.token;
-          });
-        } else {
-        }
-      },
-      onApprove: function(data) {
-        if (isPayment()) {
-          return $.post("#{paypal_execute_payment_url}", {
-            paymentID: data.paymentID,
-            payerID:   data.payerID
-          }).then(function() {
-            submitOrderPaypal(data.paymentID)
-          });
-        } else {
-        }
+    env: "#{ENV['PAYPAL_ENV']}",
+    createOrder: function() {
+      $('#order-type').val("paypal");
+      if (isPayment()) {
+        return $.post("#{paypal_create_payment_url}", $('#order-details').serialize()).then(function(data) {
+          return data.token;
+        });
+      } else {
+        return $.post("#{paypal_create_subscription_url}", $('#order-details').serialize()).then(function(data) {
+          return data.token;
+        });
       }
-    }).render('#submit-paypal');
+    },
+    onApprove: function(data) {
+      if (isPayment()) {
+        return $.post("#{paypal_execute_payment_url}", {
+          paymentID: data.paymentID,
+          payerID:   data.payerID
+        }).then(function() {
+          submitOrderPaypal(data.paymentID)
+        });
+      } else {
+        return $.post("#{paypal_execute_subscription_url}", {
+          subscriptionToken: data.orderID
+        }).then(function(executeData) {
+          submitOrderPaypal(executeData.id)
+        });
+      }
+    }
+  }).render('#submit-paypal');
   }());
 
 :css

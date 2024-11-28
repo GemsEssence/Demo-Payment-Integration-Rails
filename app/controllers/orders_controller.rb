@@ -1,6 +1,6 @@
 class OrdersController < ApplicationController
   before_action :authenticate_user!
-  before_action :prepare_new_order, only: [:paypal_create_payment]
+  before_action :prepare_new_order, only: [:paypal_create_payment, :paypal_create_subscription]
 
   def index
     products = Product.all
@@ -17,7 +17,7 @@ class OrdersController < ApplicationController
 
       Orders::Stripe.execute(order: @order, user: current_user)
     elsif order_params[:payment_gateway] == "paypal"
-      @order = Orders::Paypal.finish(order_params[:token])
+      @order = Orders::Paypal.finish(order_params[:charge_id])
     end
   ensure
 
@@ -41,6 +41,7 @@ class OrdersController < ApplicationController
     if result
       render json: { token: result }, status: :ok
     else
+      flash[:popup_message] = "Something went wrong while creating Payment"
       render json: {error: FAILURE_MESSAGE}, status: :unprocessable_entity
     end
   end
@@ -49,6 +50,28 @@ class OrdersController < ApplicationController
     if Orders::Paypal.execute_payment(payment_id: params[:paymentID], payer_id: params[:payerID])
       render json: {}, status: :ok
     else
+      flash[:popup_message] = "Something went wrong while Executing Payment"
+      render json: {error: FAILURE_MESSAGE}, status: :unprocessable_entity
+    end
+  end
+
+  def paypal_create_subscription
+    result = Orders::Paypal.create_subscription(order: @order, product: @product)
+
+    if result
+      render json: { token: result }, status: :ok
+    else
+      flash[:popup_message] = "Something went wrong while creating Subscription"
+      render json: {error: FAILURE_MESSAGE}, status: :unprocessable_entity
+    end
+  end
+
+  def paypal_execute_subscription
+    result = Orders::Paypal.execute_subscription(token: params[:subscriptionToken])
+    if result
+      render json: { id: result}, status: :ok
+    else
+      flash[:popup_message] = "Something went wrong while Executing Subscription"
       render json: {error: FAILURE_MESSAGE}, status: :unprocessable_entity
     end
   end

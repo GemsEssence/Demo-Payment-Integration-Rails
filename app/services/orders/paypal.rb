@@ -50,4 +50,34 @@ class Orders::Paypal
       return order.save
     end
   end
+
+  def self.create_subscription(order:, product:)
+    agreement =  PayPal::SDK::REST::Agreement.new({
+      name: product.name,
+      description: "Subscription for: #{product.name}",
+      start_date: (Time.now.utc + 1.minute).iso8601,
+      payer: {
+        payment_method: "paypal"
+      },
+      plan: {
+        id: product.paypal_plan_name
+      }
+    })
+    if agreement.create
+      order.token = agreement.token
+      return agreement.token if order.save
+    end
+  end
+
+  def self.execute_subscription(token:)
+    order = Order.recently_created.find_by(token: token)
+    return false unless order
+    agreement = PayPal::SDK::REST::Agreement.new
+    agreement.token = token
+    if agreement.execute
+      order.charge_id = agreement.id
+      order.set_paypal_executed
+      return order.charge_id if order.save
+    end
+  end
 end
