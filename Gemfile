@@ -80,3 +80,4 @@ gem "money-rails"
 gem 'stripe-rails'
 
 gem 'paypal-sdk-rest'
+gem 'httparty'

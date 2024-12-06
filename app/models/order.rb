@@ -1,6 +1,6 @@
 class Order < ApplicationRecord
   enum status: { pending: 0, failed: 1, paid: 2, paypal_executed: 3}
-  enum payment_gateway: { stripe: 0, paypal: 1 }
+  enum payment_gateway: { stripe: 0, paypal: 1, phonepe: 2 }
   belongs_to :product
   belongs_to :user
 

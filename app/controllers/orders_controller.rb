@@ -18,22 +18,15 @@ class OrdersController < ApplicationController
       Orders::Stripe.execute(order: @order, user: current_user)
     elsif order_params[:payment_gateway] == "paypal"
       @order = Orders::Paypal.finish(order_params[:charge_id])
+    elsif order_params[:payment_gateway] == "phonepe"
+      prepare_new_order
+      @order&.save      
+      result = Orders::Phonepe.initiate_payment(order: @order, callback_url: success_order_path(id: @order.id))
+      # temp = Orders::Phonepe.transection_status
+      
     end
   ensure
-
-    if @order&.save
-      if @order.paid?
-        # Success is rendered when order is paid and saved
-        flash[:popup_message] = "Your order was successfully placed!"
-        return redirect_to success_order_path(id: @order.id)
-      elsif @order.failed? && !@order.error_message.blank?
-        # Render error only if order failed and there is an error_message
-        flash[:popup_message] = @order.error_message
-        return redirect_to error_order_path(id: @order.id)
-      end
-    end
-    flash[:popup_message] = "Something went wrong. Please try again."
-    redirect_to root_path
+    save_order_and_redirect
   end
 
   def paypal_create_payment
@@ -96,6 +89,22 @@ class OrdersController < ApplicationController
     @order.user_id = current_user.id
     @product = Product.find(@order.product_id)
     @order.price_cents = @product.price_cents
+  end
+
+  def save_order_and_redirect
+    if @order&.save
+      
+      if @order.paid?
+        flash[:popup_message] = "Your order was successfully placed!"
+        redirect_to success_order_path(id: @order.id)
+      elsif @order.failed? && !@order.error_message.blank?
+        flash[:popup_message] = @order.error_message
+        redirect_to error_order_path(id: @order.id)
+      end
+    else
+      flash[:popup_message] = "Something went wrong. Please try again."
+      redirect_to root_path
+    end
   end
 
   def order_params
