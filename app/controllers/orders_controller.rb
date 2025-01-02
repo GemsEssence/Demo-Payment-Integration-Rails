@@ -20,10 +20,8 @@ class OrdersController < ApplicationController
       @order = Orders::Paypal.finish(order_params[:charge_id])
     elsif order_params[:payment_gateway] == "phonepe"
       prepare_new_order
-      @order&.save      
+      @order&.save
       result = Orders::Phonepe.initiate_payment(order: @order, callback_url: success_order_path(id: @order.id))
-      # temp = Orders::Phonepe.transection_status
-      
     end
   ensure
     save_order_and_redirect
@@ -75,6 +73,24 @@ class OrdersController < ApplicationController
 
   def error
     fetch_order_details
+  end
+
+  def phone_pe_redirect
+    order = Order.find(params[:order_id])
+    response = Orders::Phonepe.transaction_status(order: order)
+    # Handle the response
+    if response.is_a?(Net::HTTPSuccess)
+      res = JSON.parse(response.body)
+      if res['success'] == true && res['code'] == "PAYMENT_SUCCESS"
+        if order.paid!
+          flash[:popup_message] = "Your order was successfully placed!"
+          redirect_to success_order_path(id: order.id)
+        end
+      end
+    else
+      flash[:popup_message] = order.error_message
+      redirect_to error_order_path(id: order.id)
+    end
   end
 
   private

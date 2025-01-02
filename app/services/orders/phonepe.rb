@@ -8,135 +8,125 @@ class Orders::Phonepe
   SALT = ENV['PHONEPE_SALT']
 
   def self.initiate_payment(order:, callback_url:)
-    # payload = {
-    #   merchantId: MERCHANT_ID,
-    #   merchantTransactionId: 'MT7850590068188104', # Test transaction ID
-    #   transactionId: order.id.to_s,
-    #   # transactionId: "TXN#{SecureRandom.uuid}",
-    #   merchantUserId: order.user.id.to_s,
-    #   amount: order.price_cents,
-    #   merchantOrderId: "ORDER#{order.id}",
-    #   merchantCallbackUrl: callback_url,
-    # }
+    payload = build_payload(order, callback_url)
+    payload_encoded = Base64.strict_encode64(payload.to_json)
+    x_verify_header = generate_x_verify(payload_encoded, '/pg/v1/pay')
 
-    payload =   {
-        "merchantId": MERCHANT_ID,
-        "merchantTransactionId": "MT7850590068188104",
-        "merchantUserId": "MUID123",
-        "amount": 10000,
-        "redirectUrl": "https://webhook.site/redirect-url",
-        "redirectMode": "REDIRECT",
-        "callbackUrl": "https://webhook.site/callback-url",
-        "mobileNumber": "9999999999",
-        "paymentInstrument": {
-          "type": "PAY_PAGE"
-      }
-    }
+    response = make_request(
+      endpoint: '/pg/v1/pay',
+      method: :post,
+      headers: request_headers(x_verify_header),
+      body: { request: payload_encoded }.to_json
+    )
 
-    
-    # Generate checksum
-
-    payload_main = Base64.strict_encode64(payload.to_json)
-
-    # Create the X-VERIFY header
-    salt_index = 1 # Key index
-    payload_to_sign = "#{payload_main}/pg/v1/pay#{MERCHANT_KEY}"
-    sha256_hash = Digest::SHA256.hexdigest(payload_to_sign)
-    final_x_header = "#{sha256_hash}####{salt_index}"
-
-    uri = URI("https://api-preprod.phonepe.com/apis/hermes/pg/v1/pay")
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = true
-
-    request_body = { request: payload_main }.to_json
-    headers = {
-      'Content-Type' => 'application/json',
-      'X-VERIFY' => final_x_header,
-      'Accept' => 'application/json'
-    }
-    
-    request = Net::HTTP::Post.new(uri, headers)
-    request.body = request_body
-
-    response = http.request(request)
-
-    # Handle the response
-    if response.is_a?(Net::HTTPSuccess)
-      res = JSON.parse(response.body)
-
-      if res['success'] == true
-        payment_code = res['code']
-        payment_msg = res['message']
-        pay_url = res.dig('data', 'instrumentResponse', 'redirectInfo', 'url')
-    
-        # Redirect the user to the payment URL
-        puts "Redirecting to payment URL: #{pay_url}"
-        `xdg-open "#{pay_url}"` # Opens the URL in the default browser (for local testing)
-      else
-        puts "Payment initiation failed: #{res['message']}"
-      end
-    else
-      puts "HTTP Request failed with code #{response.code}: #{response.message}"
-    end    # Create the X-VERIFY header
-
+    handle_payment_response(response)
   end
 
-  def self.transection_status()
-    payload =   {
-        "merchantId": MERCHANT_ID,
-        "merchantTransactionId": "MT7850590068188104",
-        "merchantUserId": "MUID123",
-        "amount": 10000,
-        "redirectUrl": "https://webhook.site/redirect-url",
-        "redirectMode": "REDIRECT",
-        "callbackUrl": "https://webhook.site/callback-url",
-        "mobileNumber": "9999999999",
-        "paymentInstrument": {
-          "type": "PAY_PAGE"
-      }
-    }
+  def self.transaction_status(order:)
+    merchant_id = ENV['PHONEPE_MERCHANT_ID']
+    salt_key = ENV['PHONEPE_MERCHANT_KEY']
+    salt_key_index = ENV['PHONEPE_SALT']
+    base_url =  BASE_URL
+    transaction_id = order.id.to_s
 
+    checksum_data = checksum(merchant_id, salt_key, salt_key_index, transaction_id)
 
-    payload_main = Base64.strict_encode64(payload.to_json)
+    headers = { 'X-Verify': checksum_data, 'X-MERCHANT-ID': merchant_id, 'content_type': 'application/json' }
 
-    salt_index = 1 # Key index
-    payload_to_sign = "#{payload_main}/pg/v1/pay#{MERCHANT_KEY}"
-    sha256_hash = Digest::SHA256.hexdigest(payload_to_sign)
-    final_x_header = "#{sha256_hash}####{salt_index}"
+    url = "#{base_url}/pg/v1/status/#{merchant_id}/#{transaction_id}"
 
-    uri = URI("https://api-preprod.phonepe.com/apis/hermes/pg/v1/status/SANDBOXTESTMID/MT7850590068188104")
+    uri = URI("#{url}")
     http = Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = true
 
-    request_body = { request: payload_main }.to_json
-    headers = {
-      'Content-Type' => 'application/json',
-      'X-VERIFY' => final_x_header,
-      'X-MERCHANT-ID' => "SANDBOXTESTMID",
-    }
-
-    request = Net::HTTP::Get.new(uri, headers)
-    request.body = request_body
+    request = Net::HTTP::Get.new(url, headers)
 
     response = http.request(request)
+  end
 
-    # Handle the response
+
+  private
+
+  def self.build_payload(order, callback_url)
+    {
+      merchantId: MERCHANT_ID,
+      merchantTransactionId: order.id.to_s,
+      merchantUserId: order.user.id.to_s,
+      amount: order.price_cents,
+      redirectUrl: "http://localhost:3000/orders/phone_pe_redirect?order_id=#{order.id}",
+      redirectMode: 'REDIRECT',
+      callbackUrl: callback_url,
+      mobileNumber: '9999999999',
+      paymentInstrument: { type: 'PAY_PAGE' }
+    }
+  end
+
+  def self.generate_x_verify(payload, endpoint)
+    to_sign = "#{payload}#{endpoint}#{MERCHANT_KEY}"
+    sha256_hash = Digest::SHA256.hexdigest(to_sign)
+    "#{sha256_hash}####{SALT}"
+  end
+
+
+
+  def self.request_headers(x_verify)
+    {
+      'Content-Type' => 'application/json',
+      'X-VERIFY' => x_verify,
+      'Accept' => 'application/json',
+      'X-MERCHANT-ID' => MERCHANT_ID
+    }
+  end
+
+  def self.make_request(endpoint:, method:, headers:, body: nil)
+    uri = URI("#{BASE_URL}#{endpoint}")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+
+    request = case method
+              when :post
+                Net::HTTP::Post.new(uri, headers).tap { |req| req.body = body }
+              when :get
+                Net::HTTP::Get.new(uri, headers)
+              end
+
+    http.request(request)
+  end
+
+
+
+  def self.handle_payment_response(response)
     if response.is_a?(Net::HTTPSuccess)
       res = JSON.parse(response.body)
-    
-      if res['success'] == '1'
-        payment_code = res['code']
-        payment_msg = res['message']
+      if res['success']
         pay_url = res.dig('data', 'instrumentResponse', 'redirectInfo', 'url')
-      
-        # Redirect the user to the payment URL
         puts "Redirecting to payment URL: #{pay_url}"
-        `xdg-open "#{pay_url}"` # Opens the URL in the default browser (for local testing)
+        `xdg-open "#{pay_url}"` # For local testing, opens URL in the browser
       else
         puts "Payment initiation failed: #{res['message']}"
       end
     else
-      puts "HTTP Request failed with code #{response.code}: #{response.message}"
-    end 
+      log_http_error(response)
+    end
+  end
+
+  def self.handle_status_response(response)
+    if response.is_a?(Net::HTTPSuccess)
+      res = JSON.parse(response.body)
+      puts "Transaction status: #{res['message']}"
+    else
+      log_http_error(response)
+    end
+  end
+
+  def self.log_http_error(response)
+    puts "HTTP Request failed with code #{response.code}: #{response.message}"
+  end
+
+  def self.checksum(merchant_id, salt_key, salt_key_index, transaction_id)
+    signature_data = "/pg/v1/status/#{merchant_id}/#{transaction_id}#{salt_key}"
+    sha256_hash = Digest::SHA256.hexdigest(signature_data)
+
+    "#{sha256_hash}####{salt_key_index}"
   end
 end

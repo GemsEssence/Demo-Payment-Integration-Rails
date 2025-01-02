@@ -11,6 +11,11 @@ Rails.application.routes.draw do
       get :success
       get :error
     end
+
+    collection do
+      get :phone_pe_redirect
+      post :phone_pe_redirect
+  end
   end
 
   post 'orders/paypal/create_payment'  => 'orders#paypal_create_payment', as: :paypal_create_payment
